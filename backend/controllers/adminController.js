@@ -581,3 +581,124 @@ export const addManager = async (req, res) => {
     });
   }
 };
+export const updateManager = async (req, res) => {
+  try {
+    const managerId = Number(req.params.id);
+
+    const { fullName, email, phone, restaurantId } = req.body;
+
+    if (!Number.isInteger(managerId) || managerId <= 0) {
+      return res.status(400).json({ message: 'Invalid manager ID' });
+    }
+
+    if (!fullName?.trim() || !email?.trim() || !restaurantId) {
+      return res.status(400).json({
+        message: 'Name, email and restaurant are required'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const parsedRestaurantId = Number(restaurantId);
+
+    if (!Number.isInteger(parsedRestaurantId) || parsedRestaurantId <= 0) {
+      return res.status(400).json({ message: 'Invalid restaurant ID' });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ message: 'Invalid email address' });
+    }
+
+    const manager = await prisma.restaurantManager.findUnique({
+      where: { id: managerId },
+      include: { user: true }
+    });
+
+    if (!manager) {
+      return res.status(404).json({ message: 'Manager not found' });
+    }
+
+    const existingEmail = await prisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        id: { not: manager.userId }
+      }
+    });
+
+    if (existingEmail) {
+      return res.status(409).json({
+        message: 'Email is already registered'
+      });
+    }
+
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: parsedRestaurantId }
+    });
+
+    if (!restaurant) {
+      return res.status(404).json({ message: 'Restaurant not found' });
+    }
+
+    const assignedManager = await prisma.restaurantManager.findFirst({
+      where: {
+        restaurantId: parsedRestaurantId,
+        id: { not: managerId }
+      }
+    });
+
+    if (assignedManager) {
+      return res.status(409).json({
+        message: 'This restaurant is already assigned to another manager'
+      });
+    }
+
+    const updatedManager = await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: manager.userId },
+        data: {
+          fullName: fullName.trim(),
+          email: normalizedEmail,
+          phone: phone?.trim() || null
+        }
+      });
+
+      return await tx.restaurantManager.update({
+        where: { id: managerId },
+        data: {
+          restaurantId: parsedRestaurantId
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              phone: true,
+              role: true,
+              isActive: true,
+              createdAt: true
+            }
+          },
+          restaurant: true
+        }
+      });
+    });
+
+    return res.status(200).json({
+      message: 'Manager updated successfully',
+      manager: updatedManager
+    });
+
+  } catch (error) {
+    console.error('Update manager error:', error);
+
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        message: 'Email or restaurant is already assigned'
+      });
+    }
+
+    return res.status(500).json({
+      message: 'Failed to update manager'
+    });
+  }
+};

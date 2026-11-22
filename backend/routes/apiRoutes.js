@@ -31,7 +31,8 @@ import {
   updateRestaurant,
   updateRestaurantStatus,
   getAdminManagers,
-  addManager
+  addManager,
+  updateManager
 } from '../controllers/adminController.js';
 
 import {
@@ -239,6 +240,13 @@ router.post(
   verifyToken,
   verifyRole(['ADMIN']),
   addManager
+);
+
+router.patch(
+  '/admin/managers/:id',
+  verifyToken,
+  verifyRole(['ADMIN']),
+  updateManager
 );
 
 // ==========================================
