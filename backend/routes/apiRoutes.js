@@ -29,7 +29,9 @@ import {
   addRestaurant,
   getAdminRestaurants,
   updateRestaurant,
-  updateRestaurantStatus
+  updateRestaurantStatus,
+  getAdminManagers,
+  addManager
 } from '../controllers/adminController.js';
 
 import {
@@ -219,6 +221,24 @@ router.patch(
   verifyToken,
   verifyRole(['ADMIN']),
   updateRestaurantStatus
+);
+
+// ==========================================
+// ADMIN MANAGER MANAGEMENT ROUTES
+// ==========================================
+
+router.get(
+  '/admin/managers',
+  verifyToken,
+  verifyRole(['ADMIN']),
+  getAdminManagers
+);
+
+router.post(
+  '/admin/managers',
+  verifyToken,
+  verifyRole(['ADMIN']),
+  addManager
 );
 
 // ==========================================

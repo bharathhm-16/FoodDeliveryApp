@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -409,5 +410,174 @@ export const updateRestaurantStatus = async (req, res) => {
   } catch (error) {
     console.error('Restaurant Status Error:', error);
     res.status(500).json({ message: 'Error updating restaurant status' });
+  }
+};
+
+// ==========================================
+// ADMIN MANAGER MANAGEMENT
+// ==========================================
+
+// GET ALL MANAGERS
+export const getAdminManagers = async (req, res) => {
+  try {
+    const managers = await prisma.restaurantManager.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            role: true,
+            isActive: true,
+            createdAt: true
+          }
+        },
+        restaurant: true
+      },
+      orderBy: {
+        id: 'desc'
+      }
+    });
+
+    return res.status(200).json({
+      count: managers.length,
+      managers
+    });
+  } catch (error) {
+    console.error('Get managers error:', error);
+    return res.status(500).json({
+      message: 'Failed to fetch managers'
+    });
+  }
+};
+
+
+// ADD NEW MANAGER
+export const addManager = async (req, res) => {
+  try {
+    const {
+      fullName,
+      email,
+      phone,
+      password,
+      restaurantId
+    } = req.body;
+
+    if (!fullName || !email || !password || !restaurantId) {
+      return res.status(400).json({
+        message: 'Full name, email, password and restaurant are required'
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        message: 'Password must contain at least 8 characters'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const selectedRestaurantId = Number(restaurantId);
+
+    if (
+      !Number.isInteger(selectedRestaurantId) ||
+      selectedRestaurantId <= 0
+    ) {
+      return res.status(400).json({
+        message: 'Invalid restaurant ID'
+      });
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: {
+        email: normalizedEmail
+      }
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: 'Email is already registered'
+      });
+    }
+
+    const restaurant = await prisma.restaurant.findUnique({
+      where: {
+        id: selectedRestaurantId
+      }
+    });
+
+    if (!restaurant) {
+      return res.status(404).json({
+        message: 'Restaurant not found'
+      });
+    }
+
+    const existingManager = await prisma.restaurantManager.findUnique({
+      where: {
+        restaurantId: selectedRestaurantId
+      }
+    });
+
+    if (existingManager) {
+      return res.status(409).json({
+        message: 'This restaurant already has an assigned manager'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const manager = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          fullName: fullName.trim(),
+          email: normalizedEmail,
+          phone: phone || null,
+          passwordHash: hashedPassword,
+          role: 'RESTAURANT_MANAGER',
+          isActive: true
+        }
+      });
+
+      const managerRecord = await tx.restaurantManager.create({
+        data: {
+          userId: user.id,
+          restaurantId: selectedRestaurantId
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              phone: true,
+              role: true,
+              isActive: true,
+              createdAt: true
+            }
+          },
+          restaurant: true
+        }
+      });
+
+      return managerRecord;
+    });
+
+    return res.status(201).json({
+      message: 'Manager created and restaurant assigned successfully',
+      manager
+    });
+
+  } catch (error) {
+    console.error('Add manager error:', error);
+
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        message: 'Email or restaurant already has an assignment'
+      });
+    }
+
+    return res.status(500).json({
+      message: 'Failed to create manager'
+    });
   }
 };
